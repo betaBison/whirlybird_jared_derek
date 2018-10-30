@@ -126,19 +126,6 @@ class Controller():
         
         ##################################
         # Implement your controller here
-	'''
-	# Calculated thetad
-	thetad = (theta-self.prev_theta)/dt
-	self.prev_theta = theta
-
-	# Calculated phid
-	phid = (phi-self.prev_phi)/dt
-	self.prev_phi = phi
-
-	# Calculated psid
-	psid = (psi-self.prev_psi)/dt
-	self.prev_psi = psi	
-	'''
 
 	# theta (pitch)
 	tr_theta = 1.4
@@ -154,10 +141,11 @@ class Controller():
 	# phi (roll)
 	tr_phi = 0.3
 	Jx = 0.0047
+	zeta = .9
 	wn = pi/2.0/tr_phi/sqrt(1-zeta**2)
 	kd_phi = 2*zeta*wn*Jx
 	kp_phi = wn**2*Jx
-	ki_phi = 0
+	#ki_phi = 0
 
 
 	# psi (yaw)
@@ -165,14 +153,14 @@ class Controller():
 	bpsi = l1*self.Fe/(m1*l1**2+m2*l2**2+Jz)
 	wn = pi/2.0/tr_psi/sqrt(1-zeta**2)
 	kd_psi = 2.0*zeta*wn/bpsi
-	kd_psi += 0.02
+	#kd_psi += 0.02
 	kp_psi = wn**2/bpsi
-	ki_psi = 0.01
+	ki_psi = 0.15
 	
 
 
 	###########
-        #PID for theta
+        #PID for theta (pitch)
 
 	theta_error = self.theta_r - theta
 
@@ -197,7 +185,7 @@ class Controller():
 
 
 	###########
-        #PID for psi
+        #PID for psi (yaw)
 
 	psi_error = self.psi_r - psi
 
@@ -205,7 +193,7 @@ class Controller():
 	sigma = 0.05  # cutoff freq for dirty derivative
 	beta = (2.0*sigma-dt)/(2.0*sigma+dt)  # dirty derivative gain
 	self.psid = beta*self.psid + (1-beta)*(psi - self.prev_psi)/dt
-	self.prev_psi = psi # update previous theta
+	self.prev_psi = psi # update previous psi
 	
 
 	#Anti windup
@@ -222,7 +210,7 @@ class Controller():
 
 
 	###########
-        #PID for phi
+        #PD for phi (roll)
 
 	phi_error = phi_r - phi
 
@@ -230,23 +218,11 @@ class Controller():
 	sigma = 0.05  # cutoff freq for dirty derivative
 	beta = (2.0*sigma-dt)/(2.0*sigma+dt)  # dirty derivative gain
 	self.phid = beta*self.phid + (1-beta)*(phi - self.prev_phi)/dt
-	self.prev_phi = phi # update previous theta
-	
-	
-	#Anti windup
-	if abs(self.phid) < 0.05:
-		# integrate error for phi
-		self.phi_integrator += dt*(phi_error + self.phi_error_prev)/2.0
-
-	self.phi_error_prev = phi_error # update previous error
-
-
-
-
-	self.tau = kp_phi*phi_error + ki_phi*self.phi_integrator - kd_phi*self.phid
+	self.prev_phi = phi # update previous phi
 
 	
-
+	## final tau result
+	self.tau = kp_phi*phi_error - kd_phi*self.phid
 
 
         ##################################
