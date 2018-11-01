@@ -141,7 +141,7 @@ class Controller():
 	# phi (roll)
 	tr_phi = 0.3
 	Jx = 0.0047
-	zeta = .9
+	zeta = 0.7
 	wn = pi/2.0/tr_phi/sqrt(1-zeta**2)
 	kd_phi = 2*zeta*wn*Jx
 	kp_phi = wn**2*Jx
@@ -149,13 +149,12 @@ class Controller():
 
 
 	# psi (yaw)
-	tr_psi = tr_phi*15.0
+	tr_psi = tr_phi*8.0
 	bpsi = l1*self.Fe/(m1*l1**2+m2*l2**2+Jz)
 	wn = pi/2.0/tr_psi/sqrt(1-zeta**2)
 	kd_psi = 2.0*zeta*wn/bpsi
-	#kd_psi += 0.02
 	kp_psi = wn**2/bpsi
-	ki_psi = 0.15
+	ki_psi = 0.05
 	
 
 
