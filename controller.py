@@ -135,7 +135,7 @@ class Controller():
 	kd_theta = 2.0*zeta*wn/btheta
 	kp_theta = wn**2/btheta
 	ki_theta = 0.5
-	self.Fe = (m1*l1-m2*l2)*g*cos(theta)/l1	
+	self.Fe = 0.6*(m1*l1-m2*l2)*g*cos(theta)/l1	
 
 
 	# phi (roll)
@@ -149,7 +149,7 @@ class Controller():
 
 
 	# psi (yaw)
-	tr_psi = tr_phi*8.0
+	tr_psi = tr_phi*6.0
 	bpsi = l1*self.Fe/(m1*l1**2+m2*l2**2+Jz)
 	wn = pi/2.0/tr_psi/sqrt(1-zeta**2)
 	kd_psi = 2.0*zeta*wn/bpsi
