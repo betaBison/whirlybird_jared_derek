@@ -13,6 +13,7 @@
 import rospy
 import time
 from math import cos,pi,sqrt
+import numpy as np
 from whirlybird_msgs.msg import Command
 from whirlybird_msgs.msg import Whirlybird
 from std_msgs.msg import Float32
@@ -126,104 +127,42 @@ class Controller():
         
         ##################################
         # Implement your controller here
-
-	# theta (pitch)
-	tr_theta = 1.4
-	btheta = 1.152
-	zeta = 0.7
-	wn = pi/2.0/tr_theta/sqrt(1-zeta**2)
-	kd_theta = 2.0*zeta*wn/btheta
-	kp_theta = wn**2/btheta
-	ki_theta = 0.5
-	self.Fe = 0.6*(m1*l1-m2*l2)*g*cos(theta)/l1	
-
-
-	# phi (roll)
-	tr_phi = 0.3
-	Jx = 0.0047
-	zeta = 0.7
-	wn = pi/2.0/tr_phi/sqrt(1-zeta**2)
-	kd_phi = 2*zeta*wn*Jx
-	kp_phi = wn**2*Jx
-	#ki_phi = 0
-
-
-	# psi (yaw)
-	tr_psi = tr_phi*6.0
-	bpsi = l1*self.Fe/(m1*l1**2+m2*l2**2+Jz)
-	wn = pi/2.0/tr_psi/sqrt(1-zeta**2)
-	kd_psi = 2.0*zeta*wn/bpsi
-	kp_psi = wn**2/bpsi
-	ki_psi = 0.05
 	
-
-
-	###########
-        #PID for theta (pitch)
-
-	theta_error = self.theta_r - theta
-
 	# Dirty derivatve for theta
 	sigma = 0.05  # cutoff freq for dirty derivative
 	beta = (2.0*sigma-dt)/(2.0*sigma+dt)  # dirty derivative gain
 	self.thetad = beta*self.thetad + (1-beta)*(theta - self.prev_theta)/dt
 	self.prev_theta = theta # update previous theta
+
+	# state vector
+	x = np.matrix([[theta],[self.thetad]])
+	Klon = np.matrix([[7.36624816, 1.9098619 ]]) 
+	krlon = 2.14328874  
+
+	F =  krlon*self.theta_r - Klon*x
+	print F,
+	self.Fe = 1.0*(m1*l1-m2*l2)*g*cos(theta)/l1
+	F += self.Fe
+
 	
-	#Anti windup
-	if abs(self.thetad) < 0.2:
-		# integrate error for theta
-		self.theta_integrator += dt*(theta_error + self.theta_error_prev)/2.0
-
-	self.theta_error_prev = theta_error	
-
-
-	self.Ftil = kp_theta*theta_error + ki_theta*self.theta_integrator - kd_theta*self.thetad
-	F = self.Fe+self.Ftil
-
-
-
-
-	###########
-        #PID for psi (yaw)
-
-	psi_error = self.psi_r - psi
-
+	print self.Fe,
 	# Dirty derivatve for psi
-	sigma = 0.05  # cutoff freq for dirty derivative
-	beta = (2.0*sigma-dt)/(2.0*sigma+dt)  # dirty derivative gain
 	self.psid = beta*self.psid + (1-beta)*(psi - self.prev_psi)/dt
 	self.prev_psi = psi # update previous psi
-	
-
-	#Anti windup
-	if abs(self.psid) < 0.05:
-		# integrate error for psi
-		self.psi_integrator += dt*(psi_error + self.psi_error_prev)/2.0
-
-	self.psi_error_prev = psi_error # update previous error
-
-
-	### calculate phi reference (roll)
-	phi_r = kp_psi*psi_error + ki_psi*self.psi_integrator - kd_psi*self.psid
-
-
-
-	###########
-        #PD for phi (roll)
-
-	phi_error = phi_r - phi
 
 	# Dirty derivatve for phi
-	sigma = 0.05  # cutoff freq for dirty derivative
-	beta = (2.0*sigma-dt)/(2.0*sigma+dt)  # dirty derivative gain
 	self.phid = beta*self.phid + (1-beta)*(phi - self.prev_phi)/dt
 	self.prev_phi = phi # update previous phi
 
+
+	Klat = np.matrix([[0.34220482, 0.10491429, 0.05628416, 0.14023202]])
+	krlat = 0.10491429
+
+	xlat = np.matrix([[phi],[psi],[self.phid],[self.psid]])
+	self.tau = krlat*self.psi_r - Klat*xlat
 	
-	## final tau result
-	self.tau = kp_phi*phi_error - kd_phi*self.phid
-
-
+	print self.tau
+	
         ##################################
 
         # Scale Output
