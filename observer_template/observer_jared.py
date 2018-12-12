@@ -14,6 +14,8 @@ import control
 from scipy import signal
 import scipy.signal as ss
 from math import sin,cos
+import control.matlab as ctrl 
+
 
 class Observer():
 
@@ -46,9 +48,9 @@ class Observer():
 
         # initialize xhat for lat and lon
         # specify rise time, damping, omega, and observer omega for theta, phi and psi
-	tr_phi = .02   # 5 times faster than controller rise times
-	tr_psi = .04	
-	tr_theta = .02
+	tr_phi = 0.3/5.0    # 5 times faster than controller rise times
+	tr_psi = tr_phi*9.0	
+	tr_theta = 1.0/5.5
 
 	zeta = 0.707
 	wn_phi = 2.2/tr_phi
@@ -64,19 +66,21 @@ class Observer():
 
 	self.Clon = np.matrix([[1,0]])
 
-	desiredpoles_lon = np.roots([1,2*wn_theta*zeta,zeta**2])
-	self.Llon = ss.place_poles(self.Alon.T,self.Clon.T,desiredpoles_lon).gain_matrix
+	desiredpoles_lon = np.roots([1.0,2.0*wn_theta*zeta,zeta**2])
+	self.Llon = ctrl.place(self.Alon.T,self.Clon.T,desiredpoles_lon)
 	
 	self.Llon = self.Llon.T
-	print(self.Llon)
+	# what the poles should be
+	#self.Llon = np.matrix([[17.1094],
+	#		       [146.4]])
+	# poles are currently [[17.1],[0.49]]
 
-	
-	Fe = 0.6*(m1*l1-m2*l2)*g*cos(theta)/l1
+
 
 	self.Alat = np.matrix([[0,0,1,0],
 			[0,0,0,1],
 			[0,0,0,0],
-			[l1*Fe/(m1*l1**2+m2*l2**2+Jz),0,0,0]])
+			[l1*self.Fe/(m1*l1**2+m2*l2**2+Jz),0,0,0]])
 
 	self.Blat = np.matrix([[0],
 			[0],
@@ -99,9 +103,6 @@ class Observer():
 
         self._sub_ = rospy.Subscriber('whirlybird', Whirlybird, self.whirlybirdCallback, queue_size=5)
         self.command_sub_ = rospy.Subscriber('command', Command, self.commandCallback, queue_size=5)
-        #self.psi_r_sub_ = rospy.Subscriber('psi_r', Float32, self.psiRCallback, queue_size=5)
-        #self.theta_r_sub_ = rospy.Subscriber('theta_r', Float32, self.thetaRCallback, queue_size=5)
-        #Create estimator publisher
 	self._pub_ = rospy.Publisher('estimator', Twist, queue_size=5)
 
         while not rospy.is_shutdown():
@@ -137,23 +138,21 @@ class Observer():
         # Calculate F, tau, and equilibrium force
 
 	
-
 	force_prev = km*(self.l_in+self.r_in)
-	tau_prev = km*d*(self.l_in-self.r_in)
-	Fe = 0.85*(m1*l1-m2*l2)*g*cos(theta_m)/l1   # we added the 0.85
+	tau_prev = km*d*(self.l_in-self.r_in)  
 
 	ylon = np.matrix([[theta_m]])         # measured states
 	ylat = np.matrix([[phi_m],[psi_m]])   # measured states
 	
-	
-	
-	
         N = 10
+	print("error=",(ylon-self.Clon*self.xhat_lon))
         for i in range(0,N):
 		#Euler equations for xhat lat and xhat lon
-		self.xhat_lon += dt/float(N)*(self.Alon*self.xhat_lon+self.Blon*(force_prev-Fe) + self.Llon*(ylon-self.Clon*self.xhat_lon))
+		self.xhat_lon += dt/float(N)*(self.Alon*self.xhat_lon+self.Blon*float(force_prev-self.Fe) + self.Llon*(ylon-self.Clon*self.xhat_lon))
 		self.xhat_lat += dt/float(N)*(self.Alat*self.xhat_lat+self.Blat*tau_prev + self.Llat*(ylat-self.Clat*self.xhat_lat))
-		pass
+
+	print("Llon=",self.Llon)	
+	print(self.xhat_lon)
             
         estimator = Twist()
         # Populate estimator message with full state
