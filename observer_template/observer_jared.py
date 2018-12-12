@@ -66,7 +66,7 @@ class Observer():
 
 	self.Clon = np.matrix([[1,0]])
 
-	desiredpoles_lon = np.roots([1.0,2.0*wn_theta*zeta,zeta**2])
+	desiredpoles_lon = np.roots([1.0,2.0*wn_theta*zeta,wn_theta**2])
 	self.Llon = ctrl.place(self.Alon.T,self.Clon.T,desiredpoles_lon)
 	
 	self.Llon = self.Llon.T
@@ -91,7 +91,7 @@ class Observer():
 			[0,1,0,0]])
 
 
-	desiredpoles_lat = np.roots(np.convolve([1,2*wn_psi*zeta,zeta**2],[1,2*wn_phi*zeta,zeta**2]))
+	desiredpoles_lat = np.roots(np.convolve([1,2*wn_psi*zeta,wn_psi**2],[1,2*wn_phi*zeta,wn_phi**2]))
 	self.Llat = ss.place_poles(self.Alat.T,self.Clat.T,desiredpoles_lat).gain_matrix
 	self.Llat = self.Llat.T
 
