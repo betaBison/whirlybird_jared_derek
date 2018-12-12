@@ -12,11 +12,17 @@
 
 import rospy
 import time
+from math import cos,pi,sqrt
+import numpy as np
 from whirlybird_msgs.msg import Command
 from whirlybird_msgs.msg import Whirlybird
+from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32
+from scipy import signal
+import scipy.signal as ss
+from math import sin,cos
 
-import numpy as np
+
 
 class Controller():
 
@@ -43,55 +49,138 @@ class Controller():
         Jz = self.param['Jz']
         km = self.param['km']
 
-        self.Fe = (m1*l1*g-m2*l2*g)/(l1)
 
         # Roll Gains
-        tr_phi=.3#0.2
-        wn_phi=2.2/tr_phi
-        zeta_phi=.7#0.8
-        self.phi_r = 0.0
-        self.P_phi_ = wn_phi**2*Jx
+	#################Lateral####################################
+	############################################################
+	theta = 0.0
+	self.Fe = (m1*l1-m2*l2)*g*cos(0)/l1
+	Alat = np.matrix([[0,0,1,0],
+			[0,0,0,1],
+			[0,0,0,0],
+			[l1*self.Fe/(m1*l1**2+m2*l2**2+Jz),0,0,0]])
+	Blat = np.matrix([[0],
+			[0],
+			[1/Jx],
+			[0]])
+	Clat = np.matrix([[1,0,0,0],
+			[0,1,0,0]])
+
+	Cr = Clat[1,:]
+
+	## augment the matrices
+	Alat = np.hstack((np.vstack((Alat,-Cr)),np.zeros((5,1))))
+	Blat = np.vstack((Blat,0))
+
+
+	# phi (roll)
+	tr_phi = 0.3   ## roll rise time
+
+	zeta_phi = 0.7
+	wn_phi = pi/2.0/tr_phi/sqrt(1-zeta_phi**2)
+
+	# psi (yaw)
+	tr_psi = tr_phi*9.0    ## yaw rise time 6X longer than roll rise time
+
+	zeta_psi = 0.7
+	wn_psi = pi/2.0/tr_psi/sqrt(1-zeta_psi**2)
+
+	kI_pole = -wn_phi/2.0
+	 
+	plat = np.array([-zeta_phi*wn_phi + 1j*wn_phi*sqrt(1-zeta_phi**2), \
+			 -zeta_phi*wn_phi - 1j*wn_phi*sqrt(1-zeta_phi**2), \
+			 -zeta_psi*wn_psi + 1j*wn_psi*sqrt(1-zeta_psi**2), \
+	 		 -zeta_psi*wn_psi - 1j*wn_psi*sqrt(1-zeta_psi**2), \
+				kI_pole])
+
+	K = ss.place_poles(Alat,Blat,plat).gain_matrix
+	self.kIlat = K.item(4)
+	self.Klat = np.matrix([K.item(0),K.item(1),K.item(2),K.item(3)])
+
+
+
+	#################Longitudinal#############################
+	############################################################
+	Alon = np.matrix([[0,1],
+		         [(m1*l1-m2*l2)*g*sin(theta)/(m1*l1**2+m2*l2**2+Jy),0]])
+
+	Blon = np.matrix([[0],
+		         [l1/(m1*l1**2+m2*l2**2+Jy)]])
+
+	Clon = np.matrix([[1,0]])
+
+
+	## augment the matrices
+
+	Alon = np.hstack((np.vstack((Alon,-Clon)),np.zeros((3,1))))
+	Blon = np.vstack((Blon,0))
+
+
+	## place poles for longitudinal
+	####################################
+	# theta (pitch)
+	tr_theta = 1.0
+	zeta_theta = 0.7
+	wn_theta = pi/2.0/tr_theta/sqrt(1-zeta_theta**2)
+
+	kI_pole = -wn_theta/2.0
+
+	## desired poles
+	#########################################
+	plon = np.array([-zeta_theta*wn_theta + 1j*wn_theta*sqrt(1-zeta_theta**2),\
+		         -zeta_theta*wn_theta - 1j*wn_theta*sqrt(1-zeta_theta**2), \
+					kI_pole] )
+
+
+	## place poles for longitudinal
+	####################################
+	K = ss.place_poles(Alon,Blon,plon).gain_matrix
+
+	self.kIlon = K.item(2)
+	self.Klon = np.matrix([K.item(0),K.item(1)])
+
+
+        self.P_phi_ = 0.0
         self.I_phi_ = 0.0
-        self.D_phi_ = 2*zeta_phi*wn_phi*Jx
+        self.D_phi_ = 0.0
         self.Int_phi = 0.0
-        self.diff_phi = 0.0
         self.prev_phi = 0.0
+	self.phid = 0.0 
+	self.phi_integrator = 0.0
+	self.phi_error_prev = 0.0
 
         # Pitch Gains
-        tr_theta=1#1.2701705922171769 <- These are past values
-        wn_theta=2.2/tr_theta#np.sqrt(3.0) <- These are past values
-        zeta_theta=0.8#2.0/np.sqrt(3.0) <- These are past values
         self.theta_r = 0.0
-        self.P_theta_ = wn_theta**2/(1.152) #Change this value to reflect kp
-        self.I_theta_ = 1.2
-        self.D_theta_ = 2*zeta_theta*wn_theta/(1.152) #Change this value to reflect kd
+        self.P_theta_ = 0.0
+        self.I_theta_ = 0.0
+        self.D_theta_ = 0.0
         self.prev_theta = 0.0
         self.Int_theta = 0.0
-        self.diff_theta = 0.0
-        self.error_theta_d1 = 0.0
+	self.thetad = 0.0 
+	self.theta_integrator = 0.0
+	self.theta_error_prev = 0.0
+
 
         # Yaw Gains
-        tr_psi=8*tr_phi
-        wn_psi=2.2/tr_psi
-        zeta_psi=.9#0.8
-        b_psi = (l1*self.Fe)/(m1*l1**2+m2*l2**2+Jz)
         self.psi_r = 0.0
-        self.P_psi_ = wn_psi**2/b_psi
-        self.I_psi_ = 0.01
-        self.D_psi_ = 2*zeta_psi*wn_psi/b_psi
+        self.P_psi_ = 0.0
+        self.I_psi_ = 0.0
+        self.D_psi_ = 0.0
         self.prev_psi = 0.0
         self.Int_psi = 0.0
-        self.diff_psi = 0.0
-        self.error_psi_d1 = 0.0
+	self.psid = 0.0 
+	self.psi_integrator = 0.0
+	self.psi_error_prev = 0.0
+
 
         self.prev_time = rospy.Time.now()
 
-        #Implement your state space controller with integrator values
+	self.Ftil = 0.0
+	self.tau = 0.0
 
-        #replace subscriber to whirlybird with subscriber to estimator
-        self.command_sub_ = rospy.Subscriber('whirlybird', Whirlybird, self.whirlybirdCallback, queue_size=5)
         self.psi_r_sub_ = rospy.Subscriber('psi_r', Float32, self.psiRCallback, queue_size=5)
         self.theta_r_sub_ = rospy.Subscriber('theta_r', Float32, self.thetaRCallback, queue_size=5)
+	self.observer_sub_ = rospy.Subscriber('estimator', Twist, self.observerCallback, queue_size=5)
         self.command_pub_ = rospy.Publisher('command', Command, queue_size=5)
         while not rospy.is_shutdown():
             # wait for new messages and call the callback when they arrive
@@ -106,7 +195,17 @@ class Controller():
         self.psi_r = msg.data
 
 
-    def whirlybirdCallback(self, msg):
+    def observerCallback(self, msg):
+
+	# unpack the msg
+	theta = msg.linear.x
+	phi = msg.linear.y
+        psi = msg.linear.z
+
+	self.thetad = msg.angular.x
+	self.phid = msg.angular.y
+	self.psid = msg.angular.z
+
         g = self.param['g']
         l1 = self.param['l1']
         l2 = self.param['l2']
@@ -119,39 +218,76 @@ class Controller():
         Jy = self.param['Jy']
         Jz = self.param['Jz']
         km = self.param['km']
-        tau_time = 0.05
 
-        # get phi, theta, psi, phi_d, theta_d, psi_d from your msg
-        # phi = msg.roll
-        # theta = msg.pitch
-        # psi = msg.yaw
+
 
         # Calculate dt (This is variable)
         now = rospy.Time.now()
         dt = (now-self.prev_time).to_sec()
         self.prev_time = now
-
+        
         ##################################
         # Implement your controller here
 
+	####### Integrator theta ###########
+	theta_error = self.theta_r - theta
+	#Anti windup
+	if abs(self.thetad) < 0.2:
+		# integrate error for theta
+		self.theta_integrator += dt*(theta_error + self.theta_error_prev)/2.0
+
+	self.theta_error_prev = theta_error
+
+
+	##### state vector longitude #########
+	xlon = np.matrix([[theta],[self.thetad]])
+
+
+
+	###### calculate F #########
+	F = - self.Klon*xlon - self.kIlon*self.theta_integrator
+	
+	
+	####### equillibrium force ########
+	self.Fe = (m1*l1-m2*l2)*g*cos(theta)/l1   # we added the 0.85
+	F += self.Fe
+
+
+
+	######## Integrator psi ################
+	psi_error = self.psi_r - psi
+	#Anti windup
+	if abs(self.psid) < 0.05:
+		# integrate error for psi
+		self.psi_integrator += dt*(psi_error + self.psi_error_prev)/2.0
+
+	self.psi_error_prev = psi_error # update previous error
+
+
+
+	###### state vector for lateral
+	xlat = np.matrix([[phi],[psi],[self.phid],[self.psid]])
+	self.tau = - self.Klat*xlat - self.kIlat*self.psi_integrator
+	
+	
+
         ##################################
 
-        sat_thresh = .7
-
         # Scale Output
-        l_out = left_force/km
+        l_out = (F+self.tau/d)/2.0/km  ## convert to PWM
         if(l_out < 0):
             l_out = 0
-        elif(l_out > sat_thresh):
-            l_out = sat_thresh
+        elif(l_out > 0.7):
+            l_out = 0.7
 
-        r_out = right_force/km
+        r_out = (F-self.tau/d)/2.0/km
         if(r_out < 0):
             r_out = 0
-        elif(r_out > sat_thresh):
-            r_out = sat_thresh
+        elif(r_out > 0.7):
+            r_out = 0.7
+	
 
-        # Pack up and send command
+	# Pack up and send command
         command = Command()
         command.left_motor = l_out
         command.right_motor = r_out
@@ -160,9 +296,8 @@ class Controller():
 
 if __name__ == '__main__':
     rospy.init_node('controller', anonymous=True)
+#    try:
     controller = Controller()
-    # try:
-    #     controller = Controller()
-    # except:
-    #     rospy.ROSInterruptException
-    pass
+#    except:
+ #       rospy.ROSInterruptException
+#    pass
